@@ -25,9 +25,11 @@ MISSILE_SPAWN_INTERVAL  = 20.0  # real-seconds between new threat spawns
 MAX_ACTIVE_MISSILES     = 3
 
 # ── Interceptors ─────────────────────────────
-INTERCEPTOR_SPEED_KM_S  = 4.0
-INTERCEPTOR_KILL_DIST   = 1.2  # km – proximity kill radius
-MAX_INTERCEPTORS        = 8    # total interceptors in the battery
+INTERCEPTOR_SPEED_KM_S       = 4.0
+INTERCEPTOR_KILL_DIST        = 1.2    # km – proximity kill radius
+MAX_INTERCEPTORS             = 999   # effectively unlimited magazine
+MAX_INTERCEPTORS_PER_MISSILE = 2     # max simultaneous interceptors on one target
+RELAUNCH_COOLDOWN_S          = 3.0   # real-seconds between relaunches at same target
 
 # ── Colours (RGB) ────────────────────────────
 C_BG            = (8,  14,  24)

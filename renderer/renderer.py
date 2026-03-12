@@ -227,11 +227,24 @@ class Renderer:
             p = self._proj(i.pos)
             if p:
                 _draw_glow_circle(s, C_INTERCEPTOR, p, 4, 80)
-                spd_ms = INTERCEPTOR_SPEED_KM_S * 1000
-                lbl = self.font_sm.render(f"I{i.id}", True, C_INTERCEPTOR)
+                spd_ms  = INTERCEPTOR_SPEED_KM_S * 1000
+                lbl     = self.font_sm.render(f"I{i.id} ● LOCKED", True, (80, 255, 160))
                 spd_lbl = self.font_sm.render(f"{spd_ms:.0f} m/s", True, (120, 200, 255))
                 s.blit(lbl,     (p[0] + 6, p[1] - 14))
                 s.blit(spd_lbl, (p[0] + 6, p[1] +  1))
+
+            # Lock reticle drawn around the target missile
+            if i.target.alive:
+                tp = self._proj(i.target.pos)
+                if tp:
+                    r = 14
+                    arm = 5
+                    col = (80, 255, 160)
+                    # Four corner brackets
+                    for dx, dy in [(-1, -1), (1, -1), (1, 1), (-1, 1)]:
+                        cx, cy = tp[0] + dx * r, tp[1] + dy * r
+                        pygame.draw.line(s, col, (cx, cy), (cx + dx * arm, cy), 1)
+                        pygame.draw.line(s, col, (cx, cy), (cx, cy + dy * arm), 1)
 
     # ── Predicted paths ───────────────────────
 
@@ -403,6 +416,15 @@ class Renderer:
                 continue
             bx, by = world_to_radar(inter.pos[0], inter.pos[1])
             pygame.draw.circle(s, C_INTERCEPTOR, (bx, by), 4)
+            # Lock bracket around the target missile on radar
+            if inter.target.alive:
+                tx, ty = world_to_radar(inter.target.pos[0], inter.target.pos[1])
+                arm = 4
+                col = (80, 255, 160)
+                for dx, dy in [(-1, -1), (1, -1), (1, 1), (-1, 1)]:
+                    rx, ry = tx + dx * 7, ty + dy * 7
+                    pygame.draw.line(s, col, (rx, ry), (rx + dx * arm, ry), 1)
+                    pygame.draw.line(s, col, (rx, ry), (rx, ry + dy * arm), 1)
 
         # ── Base marker ───────────────────────
         pygame.draw.circle(s, C_BASE, (cx, cy), 7)
@@ -471,7 +493,7 @@ class Renderer:
         sep()
 
         # Interceptors
-        text(f"Interceptors    : {sim.interceptors_remaining}/{MAX_INTERCEPTORS}", C_INTERCEPTOR)
+        text(f"Interceptors    : AUTO-ENGAGE", C_INTERCEPTOR)
         text(f"In flight       : {len(sim.interceptors)}", C_INTER_TRAIL)
 
         sep()

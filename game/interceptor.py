@@ -3,7 +3,6 @@
 # ─────────────────────────────────────────────
 
 import numpy as np
-import math
 from game.constants import INTERCEPTOR_SPEED_KM_S, INTERCEPTOR_KILL_DIST
 
 _iid = 0
@@ -15,73 +14,97 @@ def _next_iid():
 
 class Interceptor:
     """
-    Flies from the base (origin) toward a predicted impact point.
-    Uses proportional-navigation-style homing: recalculates direction
-    each frame toward the *current best estimate* of the intercept point,
-    so it will adjust if the prediction is updated.
+    Target-locked interceptor.
+
+    The predictor computes an intercept point to verify the interceptor
+    can reach the missile in time.  Once launched, the interceptor
+    immediately and continuously steers toward the missile's LIVE
+    position every frame (pure pursuit + speed advantage = guaranteed
+    closure).  It never flies to a static marker in space.
     """
 
     TRAIL_LEN = 80
 
     def __init__(self, target_missile, intercept_point: np.ndarray):
         self.id              = _next_iid()
-        self.target          = target_missile       # Missile object
-        self.intercept_point = intercept_point.copy()
+        self.target          = target_missile
+        self.intercept_point = intercept_point.copy()   # kept for rendering only
 
-        self.pos   = np.array([0.0, 0.0, 0.02])    # launch from base + tiny altitude
+        self.pos   = np.array([0.0, 0.0, 0.02])   # launch from base origin
         self.alive = True
         self.hit   = False
         self.miss  = False
+        self.locked = True    # target lock confirmed at launch
         self.trail: list[np.ndarray] = []
 
-        self._update_velocity()
+        self._min_dist = float('inf')   # closest approach to the target
 
-    # ── internals ─────────────────────────────
+        # Initial heading: lead toward intercept point so we don't chase tail
+        self._steer_toward(intercept_point)
 
-    def _update_velocity(self):
-        """Recompute velocity vector toward current intercept_point."""
-        direction = self.intercept_point - self.pos
-        dist = np.linalg.norm(direction)
-        if dist < 1e-6:
-            self.vel = np.zeros(3)
-        else:
+    # ── internals ─────────────────────────────────────────────────────
+
+    def _steer_toward(self, point: np.ndarray):
+        """Recalculate velocity to point toward `point` at full speed."""
+        direction = point - self.pos
+        dist = float(np.linalg.norm(direction))
+        if dist > 1e-6:
             self.vel = (direction / dist) * INTERCEPTOR_SPEED_KM_S
+        # If already on top of the point, keep previous velocity -- never zero
 
-    # ── public API ────────────────────────────
+    # ── public API ────────────────────────────────────────────────────
 
     def update_intercept_point(self, new_point: np.ndarray):
+        """Update stored intercept point (used for rendering only once locked)."""
         self.intercept_point = new_point.copy()
-        self._update_velocity()
+        # No heading change -- we are already locked on the live target
 
     def update(self, dt_sim: float):
         if not self.alive:
             return
 
+        # Record trail
         self.trail.append(self.pos.copy())
         if len(self.trail) > self.TRAIL_LEN:
             self.trail.pop(0)
 
+        # ── Target-lock steering: always home on live missile position ──
+        if self.target.alive:
+            self._steer_toward(self.target.pos)
+
+        # ── Move ──────────────────────────────────────────────────
         self.pos += self.vel * dt_sim
 
-        # ── proximity kill check ──────────────
+        # ── Proximity kill check ───────────────────────────────────
         if self.target.alive:
-            dist = float(np.linalg.norm(self.pos - self.target.pos))
-            if dist <= INTERCEPTOR_KILL_DIST:
-                self.hit              = True
-                self.alive            = False
-                self.target.alive     = False
+            dist_to_target = float(np.linalg.norm(self.pos - self.target.pos))
+            self._min_dist = min(self._min_dist, dist_to_target)
+
+            if dist_to_target <= INTERCEPTOR_KILL_DIST:
+                self.hit                = True
+                self.alive              = False
+                self.target.alive       = False
                 self.target.intercepted = True
                 return
 
-        # ── miss check: flew past intercept point ─────────────────
-        dist_to_ip = float(np.linalg.norm(self.intercept_point - self.pos))
-        started_far = np.linalg.norm(self.intercept_point) > 2.0   # sanity guard
-        if dist_to_ip < 0.5 and not self.target.alive:
+        # ── Miss / out-of-bounds checks ────────────────────────────
+        # Overshoot: was closing, now receding well past closest approach
+        if (self.target.alive
+                and self._min_dist < float('inf')
+                and float(np.linalg.norm(self.pos - self.target.pos))
+                    > self._min_dist + 2.0):
+            self.miss  = True
             self.alive = False
             return
 
-        # Flew very far or target already dead
-        if np.linalg.norm(self.pos) > 55.0 or not self.target.alive:
+        # Out of world bounds or target already destroyed
+        if np.linalg.norm(self.pos) > 58.0 or not self.target.alive:
             if not self.hit:
-                self.miss  = True
+                self.miss = True
+            self.alive = False
+
+        # Out of world bounds or target already destroyed by another interceptor
+        if np.linalg.norm(self.pos) > 58.0 or not self.target.alive:
+            if not self.hit:
+                self.miss = True
             self.alive = False

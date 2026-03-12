@@ -35,6 +35,7 @@ class TrajectoryPredictor:
         self.ready       = False
         self.impact_point:   np.ndarray | None = None
         self.intercept_point: np.ndarray | None = None
+        self.intercept_locked: bool            = False   # True once locked
         self.intercept_time_from_now: float    = 0.0
         self.predicted_path: list[np.ndarray]  = []
         # numpy polyfit coefficients [a, b, c] per axis
@@ -84,13 +85,16 @@ class TrajectoryPredictor:
         # ── Find ground impact (z = 0 crossing) ──────────────────
         self.impact_point = self._find_impact(t_now, t_end)
 
-        # ── Compute best intercept point ──────────────────────────
-        if self.impact_point is not None:
-            ip, idt = self._find_intercept(t_now, t_end)
-            self.intercept_point            = ip
-            self.intercept_time_from_now    = idt
-        else:
-            self.intercept_point = None
+        # ── Compute best intercept point (lock once found) ────────
+        if not self.intercept_locked:
+            if self.impact_point is not None:
+                ip, idt = self._find_intercept(t_now, t_end)
+                if ip is not None:
+                    self.intercept_point         = ip
+                    self.intercept_time_from_now = idt
+                    self.intercept_locked        = True
+            else:
+                self.intercept_point = None
 
         self.ready = True
         return True

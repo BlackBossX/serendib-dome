@@ -9,6 +9,7 @@ import numpy as np
 from game.constants import (
     SIM_TIME_SCALE, MISSILE_SPAWN_INTERVAL,
     MAX_ACTIVE_MISSILES, MAX_INTERCEPTORS,
+    MAX_INTERCEPTORS_PER_MISSILE, RELAUNCH_COOLDOWN_S,
     INTERCEPTOR_KILL_DIST,
 )
 from game.missile      import Missile
@@ -56,6 +57,10 @@ class Simulation:
         self._last_real    = time.time()
         self._spawn_timer  = 0.0    # real-seconds until next spawn
         self.time_scale    = SIM_TIME_SCALE  # adjustable at runtime
+
+        # Per-missile relaunch cooldown: missile_id -> real_time of last launch
+        # Default of -9999 means "never launched" so first launch is always immediate
+        self._relaunch_times: dict[int, float] = {}
 
         # Stats
         self.score         = 0
@@ -126,12 +131,24 @@ class Simulation:
                 pred.update(m, self.sim_time)
                 m.tracked = pred.ready
 
-                # ── Auto-launch interceptor if prediction ready ───
-                if (pred.ready
-                        and pred.intercept_point is not None
-                        and not self._has_interceptor_for(m)
-                        and self.interceptors_remaining > 0):
-                    self._launch_interceptor(m, pred.intercept_point)
+                if pred.ready and pred.intercept_point is not None:
+                    # Intercept point is locked on first detection —
+                    # no need to update in-flight interceptors.
+
+                    # ── Continuous auto-launch: fire whenever a slot is free
+                    #    and the per-missile cooldown has elapsed ────────────
+                    in_flight  = sum(
+                        1 for i in self.interceptors
+                        if i.target is m and i.alive
+                    )
+                    last_t     = self._relaunch_times.get(m.id, -9999.0)
+                    cooldown_ok = (self.real_time - last_t) >= RELAUNCH_COOLDOWN_S
+
+                    if (in_flight < MAX_INTERCEPTORS_PER_MISSILE
+                            and cooldown_ok
+                            and self.interceptors_remaining > 0):
+                        self._launch_interceptor(m, pred.intercept_point)
+                        self._relaunch_times[m.id] = self.real_time
 
         # ── Collisions / ground impacts ───────
         for m in self.missiles:
@@ -165,6 +182,7 @@ class Simulation:
         else:
             # Aim directly at current position as fallback
             self._launch_interceptor(missile, missile.pos.copy())
+        self._relaunch_times[missile.id] = self.real_time
 
     def toggle_pause(self):
         self.paused = not self.paused
