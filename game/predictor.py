@@ -1,23 +1,22 @@
 # ─────────────────────────────────────────────
 #  Serendib Dome – Trajectory Predictor
 #
-#  Uses scikit-learn LinearRegression to fit the
-#  radar detection history and predict:
+#  Fits a degree-2 polynomial (numpy.polyfit) to
+#  radar detection history to predict:
 #   • Future trajectory samples (for rendering)
 #   • Predicted ground-impact point (z = 0)
 #   • Best intercept point / time for launch
 #
-#  Feature engineering:
-#   x(t), y(t) are linear  → features = [t]
-#   z(t) is quadratic       → features = [t, t²]
-#  We use the same Polynomial (degree-2) model for
-#  all three axes to keep things uniform and to let
-#  the model capture the gravity term.
+#  Model per axis  (t = simulation time):
+#   x(t) = a·t² + b·t + c   (near-linear, a ≈ 0)
+#   y(t) = a·t² + b·t + c
+#   z(t) = a·t² + b·t + c   (a captures ½g)
+#
+#  Pure NumPy – no scikit-learn needed, so this
+#  works on desktop AND in WebAssembly (pygbag).
 # ─────────────────────────────────────────────
 
 import numpy as np
-from sklearn.linear_model import LinearRegression
-from sklearn.preprocessing import PolynomialFeatures
 from game.constants import RADAR_MIN_DETECTIONS, INTERCEPTOR_SPEED_KM_S
 
 
@@ -29,53 +28,52 @@ class TrajectoryPredictor:
 
     PREDICT_HORIZON = 60.0   # seconds of future trajectory to show
     PREDICT_STEPS   = 80     # number of sample points along predicted path
+    POLY_DEG        = 2      # polynomial degree
 
     def __init__(self, missile_id: int):
-        self.missile_id = missile_id
-        self.ready       = False            # True once we have a valid model
-        self.impact_point: np.ndarray | None = None   # predicted z=0 crossing
+        self.missile_id  = missile_id
+        self.ready       = False
+        self.impact_point:   np.ndarray | None = None
         self.intercept_point: np.ndarray | None = None
-        self.intercept_time_from_now: float = 0.0
-        self.predicted_path: list[np.ndarray] = []   # future trajectory samples
-        self._poly = PolynomialFeatures(degree=2, include_bias=True)
-        self._reg_x = LinearRegression()
-        self._reg_y = LinearRegression()
-        self._reg_z = LinearRegression()
+        self.intercept_time_from_now: float    = 0.0
+        self.predicted_path: list[np.ndarray]  = []
+        # numpy polyfit coefficients [a, b, c] per axis
+        self._cx = None
+        self._cy = None
+        self._cz = None
 
     # ── public API ────────────────────────────
 
-    def update(self, missile, sim_time: float):
+    def update(self, missile, sim_time: float) -> bool:
         """
-        Re-fit the regression model using all detection history so far.
+        Re-fit the polynomial models using all detection history so far.
         Returns True if prediction is usable.
         """
-        times = missile.det_times
+        times     = missile.det_times
         positions = missile.det_positions
 
         if len(times) < RADAR_MIN_DETECTIONS:
             self.ready = False
             return False
 
-        T = np.array(times, dtype=float).reshape(-1, 1)
-        T_poly = self._poly.fit_transform(T)
+        T  = np.array(times,     dtype=float)
+        xs = np.array([p[0] for p in positions], dtype=float)
+        ys = np.array([p[1] for p in positions], dtype=float)
+        zs = np.array([p[2] for p in positions], dtype=float)
 
-        xs = np.array([p[0] for p in positions])
-        ys = np.array([p[1] for p in positions])
-        zs = np.array([p[2] for p in positions])
-
-        self._reg_x.fit(T_poly, xs)
-        self._reg_y.fit(T_poly, ys)
-        self._reg_z.fit(T_poly, zs)
+        # np.polyfit returns coefficients highest-power first [a, b, c]
+        self._cx = np.polyfit(T, xs, self.POLY_DEG)
+        self._cy = np.polyfit(T, ys, self.POLY_DEG)
+        self._cz = np.polyfit(T, zs, self.POLY_DEG)
 
         # ── Sample the predicted future path ──────────────────────
         t_now  = sim_time
         t_end  = t_now + self.PREDICT_HORIZON
-        t_samp = np.linspace(t_now, t_end, self.PREDICT_STEPS).reshape(-1, 1)
-        T_s    = self._poly.transform(t_samp)
+        t_samp = np.linspace(t_now, t_end, self.PREDICT_STEPS)
 
-        px = self._reg_x.predict(T_s)
-        py = self._reg_y.predict(T_s)
-        pz = self._reg_z.predict(T_s)
+        px = np.polyval(self._cx, t_samp)
+        py = np.polyval(self._cy, t_samp)
+        pz = np.polyval(self._cz, t_samp)
 
         self.predicted_path = [
             np.array([px[i], py[i], pz[i]])
@@ -99,12 +97,11 @@ class TrajectoryPredictor:
 
     # ── helpers ───────────────────────────────
 
-    def _predict_pos(self, t_abs: float) -> np.ndarray:
-        T_p = self._poly.transform([[t_abs]])
+    def _predict_pos(self, t: float) -> np.ndarray:
         return np.array([
-            self._reg_x.predict(T_p)[0],
-            self._reg_y.predict(T_p)[0],
-            self._reg_z.predict(T_p)[0],
+            float(np.polyval(self._cx, t)),
+            float(np.polyval(self._cy, t)),
+            float(np.polyval(self._cz, t)),
         ])
 
     def _find_impact(self, t_start: float, t_end: float) -> np.ndarray | None:

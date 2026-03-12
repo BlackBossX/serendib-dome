@@ -20,6 +20,35 @@ pip install -r requirements.txt
 python main.py
 ```
 
+## Deploy to Vercel (Web / WASM)
+
+The game compiles to WebAssembly via **[pygbag](https://github.com/pygame-web/pygbag)** and can be hosted anywhere as a static site.
+
+### Option A – Vercel auto-build (recommended)
+
+1. Push this repo to GitHub
+2. Import the project on [vercel.com](https://vercel.com/)
+3. Vercel reads `vercel.json` and runs:
+   ```
+   pip install pygbag numpy pygame
+   python -m pygbag --build --width 1440 --height 840 .
+   ```
+4. The `web-build/` directory is deployed automatically
+
+> The `vercel.json` also sets the required COOP/COEP HTTP headers needed for WebAssembly SharedArrayBuffer.
+
+### Option B – Local build → deploy
+
+```bash
+# Build once (creates web-build/)
+./build_web.sh
+
+# Preview locally before deploying
+./build_web.sh --serve   # opens http://localhost:8000
+
+# Then push + let Vercel serve the web-build/ directory
+```
+
 ## Controls
 
 | Key / Input | Action |
@@ -35,16 +64,20 @@ python main.py
 
 ```
 serendib-dome/
-├── main.py                 # Entry point & event loop
-├── requirements.txt
+├── main.py                 # Entry point – async (works on desktop + pygbag WASM)
+├── requirements.txt        # pygame, numpy, pygbag  (no scikit-learn needed)
+├── vercel.json             # Vercel static deployment config
+├── build_web.sh            # Local WASM build helper
+├── run.sh                  # Desktop run helper (auto-creates .venv)
 ├── game/
 │   ├── constants.py        # All tunable parameters
 │   ├── missile.py          # Ballistic missile physics
 │   ├── interceptor.py      # Interceptor missile homing logic
 │   ├── radar.py            # Rotating radar beam detection
-│   ├── predictor.py        # Polynomial Linear Regression predictor
+│   ├── predictor.py        # NumPy polyfit trajectory predictor
 │   └── simulation.py       # Central simulation state manager
 └── renderer/
     ├── camera.py           # Perspective camera (spherical orbit)
     └── renderer.py         # Full pygame renderer (3D + radar + HUD)
 ```
+

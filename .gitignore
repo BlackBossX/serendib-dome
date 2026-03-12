@@ -35,3 +35,8 @@ Thumbs.db
 
 # Logs
 *.log
+
+# pygbag / web build artefacts
+web-build/
+*.wasm
+
