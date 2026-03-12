@@ -41,6 +41,5 @@ Thumbs.db
 # web-build/ is committed so Vercel can serve it with no build step
 *.wasm
 
-logs/
 
 
