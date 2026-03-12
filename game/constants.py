@@ -9,7 +9,7 @@ MAX_ALTITUDE_KM   = 20.0   # ceiling for the simulation volume
 GRAVITY_KM_S2     = 0.0098 # g in km/s²  (9.8 m/s²)
 
 # ── Time ─────────────────────────────────────
-SIM_TIME_SCALE    = 8.0    # sim seconds per real second (speed-up)
+SIM_TIME_SCALE    = 1.5    # sim seconds per real second (1 = real-time, 8 = fast)
 TARGET_FPS        = 60
 
 # ── Radar ─────────────────────────────────────
@@ -21,8 +21,8 @@ RADAR_MIN_DETECTIONS  = 4      # minimum hits before prediction is attempted
 # ── Missiles ─────────────────────────────────
 MISSILE_SPEED_MIN_KM_S  = 1.0
 MISSILE_SPEED_MAX_KM_S  = 2.5
-MISSILE_SPAWN_INTERVAL  = 8.0  # real-seconds between new threat spawns
-MAX_ACTIVE_MISSILES     = 6
+MISSILE_SPAWN_INTERVAL  = 20.0  # real-seconds between new threat spawns
+MAX_ACTIVE_MISSILES     = 3
 
 # ── Interceptors ─────────────────────────────
 INTERCEPTOR_SPEED_KM_S  = 4.0

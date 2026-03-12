@@ -204,9 +204,12 @@ class Renderer:
             p = self._proj(m.pos)
             if p:
                 _draw_glow_circle(s, C_MISSILE, p, 5, 80)
-                # Label
+                # ID + live speed
+                spd_ms = m.speed_km_s * 1000   # km/s → m/s for readability
                 lbl = self.font_sm.render(f"M{m.id}", True, C_MISSILE)
-                s.blit(lbl, (p[0] + 7, p[1] - 6))
+                spd_lbl = self.font_sm.render(f"{spd_ms:.0f} m/s", True, (255, 160, 80))
+                s.blit(lbl,     (p[0] + 7, p[1] - 14))
+                s.blit(spd_lbl, (p[0] + 7, p[1] +  1))
 
     # ── Interceptors ──────────────────────────
 
@@ -224,6 +227,11 @@ class Renderer:
             p = self._proj(i.pos)
             if p:
                 _draw_glow_circle(s, C_INTERCEPTOR, p, 4, 80)
+                spd_ms = INTERCEPTOR_SPEED_KM_S * 1000
+                lbl = self.font_sm.render(f"I{i.id}", True, C_INTERCEPTOR)
+                spd_lbl = self.font_sm.render(f"{spd_ms:.0f} m/s", True, (120, 200, 255))
+                s.blit(lbl,     (p[0] + 6, p[1] - 14))
+                s.blit(spd_lbl, (p[0] + 6, p[1] +  1))
 
     # ── Predicted paths ───────────────────────
 
@@ -238,15 +246,17 @@ class Renderer:
                 if k % 3 != 0:
                     pygame.draw.line(s, C_PREDICTED, pts[k - 1], pts[k], 1)
 
-            # Impact cross
+            # Impact cross + label
             if pred.impact_point is not None:
                 ip = self._proj(pred.impact_point)
                 if ip:
                     pygame.draw.line(s, C_IMPACT, (ip[0]-8, ip[1]), (ip[0]+8, ip[1]), 2)
                     pygame.draw.line(s, C_IMPACT, (ip[0], ip[1]-8), (ip[0], ip[1]+8), 2)
                     pygame.draw.circle(s, C_IMPACT, ip, 6, 2)
+                    lbl = self.font_sm.render("IMPACT POINT", True, C_IMPACT)
+                    s.blit(lbl, (ip[0] + 10, ip[1] - 7))
 
-            # Intercept target point (blue diamond)
+            # Intercept target point (blue diamond + label)
             if pred.intercept_point is not None:
                 tp = self._proj(pred.intercept_point)
                 if tp:
@@ -254,6 +264,8 @@ class Renderer:
                         (tp[0], tp[1]-9), (tp[0]+7, tp[1]),
                         (tp[0], tp[1]+9), (tp[0]-7, tp[1]),
                     ], 2)
+                    lbl = self.font_sm.render("INTERCEPT POINT", True, C_INTERCEPTOR)
+                    s.blit(lbl, (tp[0] + 10, tp[1] - 7))
 
     # ── Explosions ────────────────────────────
 
@@ -285,8 +297,12 @@ class Renderer:
         # Title bar
         t = self.font_lg.render("SERENDIB DOME  –  3D BATTLE VIEW", True, C_TEXT)
         s.blit(t, (10, 8))
+        # Time scale badge
+        ts_col = (100, 255, 120) if sim.time_scale <= 1.5 else (255, 200, 60)
+        ts_lbl = self.font_lg.render(f"SPEED  {sim.time_scale:.2f}×", True, ts_col)
+        s.blit(ts_lbl, (VIEW3D_W - ts_lbl.get_width() - 10, 8))
         # Controls hint
-        h = self.font_sm.render("DRAG: rotate    SCROLL: zoom    SPACE: pause    L: launch", True, (50, 80, 70))
+        h = self.font_sm.render("DRAG:rotate  SCROLL:zoom  SPACE:pause  L:launch  [:slower  ]:faster", True, (50, 80, 70))
         s.blit(h, (10, VIEW3D_H - 20))
 
     # ══════════════════════════════════════════
@@ -363,7 +379,8 @@ class Renderer:
             bx, by = world_to_radar(m.pos[0], m.pos[1])
             pygame.draw.circle(s, C_MISSILE, (bx, by), 5)
             pygame.draw.circle(s, (255, 200, 150), (bx, by), 5, 1)
-            lbl = self.font_sm.render(f"M{m.id}", True, C_MISSILE)
+            spd_ms = m.speed_km_s * 1000
+            lbl = self.font_sm.render(f"M{m.id}  {spd_ms:.0f}m/s", True, C_MISSILE)
             s.blit(lbl, (bx + 7, by - 6))
 
             # Predicted impact on radar
@@ -430,12 +447,27 @@ class Renderer:
         text("── MISSION STATUS ──", (80, 160, 100), self.font_lg)
         sep()
 
-        # Threats
-        live = len(sim.live_missiles)
-        trk  = len(sim.tracked_missiles)
-        text(f"Threats active  : {live}", C_MISSILE if live > 0 else C_TEXT)
-        text(f"Tracked (ML)    : {trk}",  C_PREDICTED)
+        # Sim speed
+        ts_col = (100, 255, 120) if sim.time_scale <= 1.5 else (255, 200, 60)
+        text(f"Sim speed       : {sim.time_scale:.2f}×  ([ slower  ] faster)", ts_col)
+        sep()
 
+        # Speeds
+        text(f"Interceptor spd : {INTERCEPTOR_SPEED_KM_S*1000:.0f} m/s", C_INTERCEPTOR)
+        sep()
+
+        # Per-missile live speeds
+        text("Threat speeds:", (180, 100, 60))
+        if sim.live_missiles:
+            for m in sim.live_missiles:
+                spd_ms  = m.speed_km_s * 1000
+                rng_km  = m.range_km
+                alt_km  = m.pos[2]
+                status  = "tracked" if m.tracked else "detect "
+                text(f"  M{m.id}  {spd_ms:5.0f}m/s  rng:{rng_km:4.1f}km  alt:{alt_km:4.1f}km  [{status}]",
+                     C_MISSILE)
+        else:
+            text("  (no active threats)", (60, 80, 70))
         sep()
 
         # Interceptors
@@ -459,6 +491,14 @@ class Renderer:
 
         if sim.paused:
             text("  *** PAUSED ***", (255, 200, 50), self.font_lg)
+
+        sep()
+        text("── LEGEND ──", (60, 100, 80), self.font_md)
+        text("  ● red dot     = incoming missile",  C_MISSILE)
+        text("  ● blue dot    = our interceptor",   C_INTERCEPTOR)
+        text("  --- yellow    = predicted path",    C_PREDICTED)
+        text("  ⊕ orange      = predicted impact",  C_IMPACT)
+        text("  ◇ blue diamond= intercept point",   C_INTERCEPTOR)
 
     # ══════════════════════════════════════════
     #  Input routing

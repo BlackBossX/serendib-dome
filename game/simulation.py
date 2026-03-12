@@ -55,6 +55,7 @@ class Simulation:
         self.real_time     = 0.0     # real seconds elapsed
         self._last_real    = time.time()
         self._spawn_timer  = 0.0    # real-seconds until next spawn
+        self.time_scale    = SIM_TIME_SCALE  # adjustable at runtime
 
         # Stats
         self.score         = 0
@@ -83,7 +84,7 @@ class Simulation:
         if self.paused:
             return
 
-        dt_sim = dt_r * SIM_TIME_SCALE
+        dt_sim = dt_r * self.time_scale
         self.sim_time   += dt_sim
         self.real_time  += dt_r
 
@@ -167,6 +168,14 @@ class Simulation:
 
     def toggle_pause(self):
         self.paused = not self.paused
+
+    def speed_up(self):
+        """Increase simulation speed (capped at 8×)."""
+        self.time_scale = min(8.0, round(self.time_scale + 0.5, 1))
+
+    def slow_down(self):
+        """Decrease simulation speed (minimum 0.25×)."""
+        self.time_scale = max(0.25, round(self.time_scale - 0.5, 1))
 
     # ── Private helpers ───────────────────────
 

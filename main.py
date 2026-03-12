@@ -54,6 +54,10 @@ async def main():
                     running = False
                 elif event.key == pygame.K_SPACE:
                     sim.toggle_pause()
+                elif event.key == pygame.K_LEFTBRACKET:    # [ = slower
+                    sim.slow_down()
+                elif event.key == pygame.K_RIGHTBRACKET:   # ] = faster
+                    sim.speed_up()
                 elif event.key == pygame.K_r:
                     sim      = Simulation()
                     renderer = Renderer(screen)

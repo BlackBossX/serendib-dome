@@ -69,6 +69,9 @@ class Missile:
         self.pos = np.array([x0, y0, z0], dtype=float)
         self.trail: list[np.ndarray] = []
 
+        # store initial horizontal speed for the HUD label
+        self.initial_speed_km_s = math.hypot(self.vx, self.vy)
+
         # ── Radar bookkeeping ──────────────────────────────────────
         self.detected     = False
         self.tracked      = False           # enough points for prediction
@@ -114,6 +117,11 @@ class Missile:
     @property
     def range_km(self) -> float:
         return float(np.linalg.norm(self.pos))
+
+    @property
+    def speed_km_s(self) -> float:
+        """Current total speed (3-D velocity magnitude) in km/s."""
+        return float(math.hypot(math.hypot(self.vx, self.vy), self.vz))
 
     @property
     def azimuth_deg(self) -> float:
