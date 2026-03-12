@@ -16,6 +16,7 @@ from game.missile      import Missile
 from game.interceptor  import Interceptor
 from game.radar        import Radar
 from game.predictor    import TrajectoryPredictor
+from game.datalogger   import DataLogger
 
 
 class Explosion:
@@ -70,8 +71,20 @@ class Simulation:
         self.total_spawned = 0
         self.interceptors_remaining = MAX_INTERCEPTORS
 
+        # Runtime-adjustable salvo size (1–10)
+        self.max_active_missiles = MAX_ACTIVE_MISSILES
+
         # Paused flag
         self.paused = False
+
+        # Data logger
+        self.logger = DataLogger()
+        # Tracking sets to avoid duplicate log entries
+        self._tracked_logged: set[int] = set()   # missile ids already logged TRACKED
+        self._lock_logged:    set[int] = set()   # missile ids already logged LOCK
+        self._det_counts:    dict[int, int] = {} # last logged detection count
+        self._kill_logged:   set[int] = set()   # interceptor ids already logged KILL
+        self._miss_logged:   set[int] = set()   # interceptor ids already logged MISS
 
         # Spawn first missile immediately
         self._spawn_missile()
@@ -97,7 +110,7 @@ class Simulation:
         self._spawn_timer -= dt_r
         if self._spawn_timer <= 0:
             active = sum(1 for m in self.missiles if m.alive)
-            if active < MAX_ACTIVE_MISSILES:
+            if active < self.max_active_missiles:
                 self._spawn_missile()
             self._spawn_timer = MISSILE_SPAWN_INTERVAL
 
@@ -122,6 +135,12 @@ class Simulation:
                 continue
             self.radar.scan_missile(m, self.sim_time)
 
+            # Log new radar detections
+            prev = self._det_counts.get(m.id, 0)
+            if len(m.det_times) > prev:
+                self.logger.on_missile_detected(m, self.real_time, self.sim_time)
+                self._det_counts[m.id] = len(m.det_times)
+
             # Update or create predictor
             if m.id not in self.predictors:
                 self.predictors[m.id] = TrajectoryPredictor(m.id)
@@ -131,7 +150,18 @@ class Simulation:
                 pred.update(m, self.sim_time)
                 m.tracked = pred.ready
 
+                # Log first-time tracking
+                if m.tracked and m.id not in self._tracked_logged:
+                    self._tracked_logged.add(m.id)
+                    self.logger.on_missile_tracked(m, self.real_time, self.sim_time)
+
                 if pred.ready and pred.intercept_point is not None:
+                    # Log first-time intercept lock
+                    if m.id not in self._lock_logged:
+                        self._lock_logged.add(m.id)
+                        self.logger.on_intercept_locked(
+                            m, pred.intercept_point, self.real_time, self.sim_time)
+
                     # Intercept point is locked on first detection —
                     # no need to update in-flight interceptors.
 
@@ -153,17 +183,29 @@ class Simulation:
         # ── Collisions / ground impacts ───────
         for m in self.missiles:
             if not m.alive and not m.intercepted:
-                # Hit the ground
                 if np.linalg.norm(m.pos[:2]) < 5.0:
                     self.breached += 1
+                    self.logger.on_missile_breach(m, self.real_time, self.sim_time)
+                else:
+                    self.logger.on_missile_missed(m, self.real_time, self.sim_time)
                 self.missed += 1
                 self.explosions.append(Explosion(m.pos))
 
         for i in self.interceptors:
-            if i.hit and i.alive == False:
-                self.intercepted += 1
-                self.score       += 100
-                self.explosions.append(Explosion(i.pos))
+            if not i.alive:
+                if i.hit and i.id not in self._kill_logged:
+                    self._kill_logged.add(i.id)
+                    self.intercepted += 1
+                    self.score       += 100
+                    self.explosions.append(Explosion(i.pos))
+                    self.logger.on_kill(i, i.target, self.real_time, self.sim_time)
+                elif i.miss and i.id not in self._miss_logged:
+                    self._miss_logged.add(i.id)
+                    self.logger.on_miss(i, self.real_time, self.sim_time)
+
+        # Trajectory snapshot
+        self.logger.sample(self.missiles, self.interceptors,
+                           self.real_time, self.sim_time)
 
         # ── Cleanup ──────────────────────────
         self.missiles     = [m for m in self.missiles     if m.alive]
@@ -187,6 +229,14 @@ class Simulation:
     def toggle_pause(self):
         self.paused = not self.paused
 
+    def increase_salvo(self):
+        """Add one more missile to the maximum simultaneous salvo (cap 10)."""
+        self.max_active_missiles = min(10, self.max_active_missiles + 1)
+
+    def decrease_salvo(self):
+        """Remove one missile from the maximum simultaneous salvo (floor 1)."""
+        self.max_active_missiles = max(1, self.max_active_missiles - 1)
+
     def speed_up(self):
         """Increase simulation speed (capped at 8×)."""
         self.time_scale = min(8.0, round(self.time_scale + 0.5, 1))
@@ -202,6 +252,7 @@ class Simulation:
         self.missiles.append(m)
         self.total_spawned += 1
         self._spawn_timer = MISSILE_SPAWN_INTERVAL
+        self.logger.on_missile_spawn(m, self.real_time, self.sim_time)
 
     def _has_interceptor_for(self, missile: 'Missile') -> bool:
         return any(i.target is missile and i.alive for i in self.interceptors)
@@ -210,6 +261,11 @@ class Simulation:
         inter = Interceptor(missile, point)
         self.interceptors.append(inter)
         self.interceptors_remaining = max(0, self.interceptors_remaining - 1)
+        self.logger.on_interceptor_launch(inter, missile, self.real_time, self.sim_time)
+
+    def close(self):
+        """Flush and close log files. Call when the simulation ends or resets."""
+        self.logger.close()
 
     # ── Accessors ─────────────────────────────
 

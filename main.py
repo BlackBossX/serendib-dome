@@ -48,17 +48,20 @@ async def main():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+                sim.close()
 
             elif event.type == pygame.KEYDOWN:
                 if event.key in (pygame.K_ESCAPE, pygame.K_q):
                     running = False
+                    sim.close()
                 elif event.key == pygame.K_SPACE:
                     sim.toggle_pause()
-                elif event.key == pygame.K_LEFTBRACKET:    # [ = slower
+                elif event.key == pygame.K_LEFTBRACKET:
                     sim.slow_down()
-                elif event.key == pygame.K_RIGHTBRACKET:   # ] = faster
+                elif event.key == pygame.K_RIGHTBRACKET:
                     sim.speed_up()
                 elif event.key == pygame.K_r:
+                    sim.close()         # flush current run logs
                     sim      = Simulation()
                     renderer = Renderer(screen)
                 elif event.key == pygame.K_l:
@@ -76,6 +79,12 @@ async def main():
                     renderer.handle_scroll(1)
                 elif event.button == 5:
                     renderer.handle_scroll(-1)
+                elif event.button == 1:
+                    # Salvo size +/- buttons
+                    if renderer.btn_salvo_minus.collidepoint(event.pos):
+                        sim.decrease_salvo()
+                    elif renderer.btn_salvo_plus.collidepoint(event.pos):
+                        sim.increase_salvo()
 
             elif event.type == pygame.MOUSEBUTTONUP:
                 renderer.handle_mouse_up(event.button)

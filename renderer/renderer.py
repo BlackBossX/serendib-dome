@@ -87,6 +87,10 @@ class Renderer:
         self.surf_radar = pygame.Surface((RADAR_W,  RADAR_H))
         self.surf_hud   = pygame.Surface((RADAR_W,  HUD_H))
 
+        # Salvo control button rects (screen coords, updated each HUD draw)
+        self.btn_salvo_minus = pygame.Rect(0, 0, 0, 0)
+        self.btn_salvo_plus  = pygame.Rect(0, 0, 0, 0)
+
         # Fonts
         pygame.font.init()
         self.font_lg = pygame.font.SysFont("consolas", 18, bold=True)
@@ -441,86 +445,143 @@ class Renderer:
         s.blit(az_lbl, (8, RADAR_H - 22))
 
     # ══════════════════════════════════════════
-    #  HUD Panel
+    #  HUD Panel  (two-column layout)
     # ══════════════════════════════════════════
 
     def _draw_hud(self, sim):
         s = self.surf_hud
         s.fill(C_PANEL_BG)
-
-        # Border
         pygame.draw.rect(s, (30, 60, 45), s.get_rect(), 2)
 
-        x, y = 12, 8
-        line_h = 19
+        LH   = 15          # base line height
+        COL2 = 302         # x-start of right column
+        MIDX = COL2 - 4    # vertical divider x
 
-        def text(msg, color=C_TEXT, font=None):
-            nonlocal y
-            f = font or self.font_md
-            lbl = f.render(msg, True, color)
-            s.blit(lbl, (x, y))
-            y += line_h
+        # Vertical divider between columns
+        pygame.draw.line(s, (30, 55, 40), (MIDX, 4), (MIDX, HUD_H - 4), 1)
 
-        def sep():
-            nonlocal y
-            pygame.draw.line(s, (30, 55, 40), (x, y), (RADAR_W - x, y), 1)
-            y += 5
+        def txt(msg, cx, cy, color=C_TEXT, font=None):
+            f = font or self.font_sm
+            surf = f.render(msg, True, color)
+            s.blit(surf, (cx, cy))
+            return surf.get_height()
 
-        text("── MISSION STATUS ──", (80, 160, 100), self.font_lg)
-        sep()
+        def hsep(x1, x2, cy):
+            pygame.draw.line(s, (30, 55, 40), (x1, cy), (x2, cy), 1)
+
+        # ── LEFT COLUMN ──────────────────────────────────────────
+        lx, ly = 10, 6
+
+        # Header
+        txt("── MISSION STATUS ──", lx, ly, (80, 160, 100), self.font_md)
+        ly += LH + 2
+        hsep(lx, MIDX - 2, ly); ly += 5
 
         # Sim speed
         ts_col = (100, 255, 120) if sim.time_scale <= 1.5 else (255, 200, 60)
-        text(f"Sim speed       : {sim.time_scale:.2f}×  ([ slower  ] faster)", ts_col)
-        sep()
+        txt(f"Sim speed : {sim.time_scale:.2f}×  ( [ / ] )", lx, ly, ts_col)
+        ly += LH
 
-        # Speeds
-        text(f"Interceptor spd : {INTERCEPTOR_SPEED_KM_S*1000:.0f} m/s", C_INTERCEPTOR)
-        sep()
+        # Interceptors line
+        n_fly = len(sim.interceptors)
+        txt(f"Interceptors : AUTO  |  In-flight: {n_fly}", lx, ly, C_INTERCEPTOR)
+        ly += LH + 1
+        hsep(lx, MIDX - 2, ly); ly += 5
 
-        # Per-missile live speeds
-        text("Threat speeds:", (180, 100, 60))
-        if sim.live_missiles:
-            for m in sim.live_missiles:
-                spd_ms  = m.speed_km_s * 1000
-                rng_km  = m.range_km
-                alt_km  = m.pos[2]
-                status  = "tracked" if m.tracked else "detect "
-                text(f"  M{m.id}  {spd_ms:5.0f}m/s  rng:{rng_km:4.1f}km  alt:{alt_km:4.1f}km  [{status}]",
-                     C_MISSILE)
+        # Threats list
+        threats = sim.live_missiles
+        hdr_col = (220, 80, 60) if threats else (60, 80, 70)
+        txt(f"THREATS  ({len(threats)} active):", lx, ly, hdr_col, self.font_md)
+        ly += LH + 1
+
+        if threats:
+            for m in threats:
+                spd  = m.speed_km_s * 1000
+                rng  = m.range_km
+                alt  = m.pos[2]
+                st   = "TRK" if m.tracked else "DET"
+                col  = (255, 120, 80) if m.tracked else (180, 80, 60)
+                txt(f" M{m.id} {spd:4.0f}m/s  {rng:4.1f}km  alt{alt:4.1f}  [{st}]",
+                    lx, ly, col)
+                ly += LH
         else:
-            text("  (no active threats)", (60, 80, 70))
-        sep()
+            txt("  (no active threats)", lx, ly, (60, 80, 70))
+            ly += LH
 
-        # Interceptors
-        text(f"Interceptors    : AUTO-ENGAGE", C_INTERCEPTOR)
-        text(f"In flight       : {len(sim.interceptors)}", C_INTER_TRAIL)
+        # ── RIGHT COLUMN ─────────────────────────────────────────
+        rx, ry = COL2 + 8, 6
 
-        sep()
+        # Score block
+        txt("── SCORE ──", rx, ry, (80, 160, 100), self.font_md)
+        ry += LH + 2
+        hsep(rx, RADAR_W - 6, ry); ry += 5
 
-        # Score
-        text(f"Kills           : {sim.intercepted}", C_BASE)
-        text(f"Breaches        : {sim.breached}", C_TEXT_WARN if sim.breached > 0 else C_TEXT)
-        text(f"Score           : {sim.score}", (220, 220, 100))
+        txt(f"Kills    : {sim.intercepted}", rx, ry, C_BASE)
+        ry += LH
+        breech_col = C_TEXT_WARN if sim.breached > 0 else C_TEXT
+        txt(f"Breaches : {sim.breached}", rx, ry, breech_col)
+        ry += LH
+        txt(f"Score    : {sim.score}", rx, ry, (220, 220, 100))
+        ry += LH + 1
+        hsep(rx, RADAR_W - 6, ry); ry += 5
 
-        sep()
-
-        # Sim time
+        # Time block
         mm = int(sim.real_time) // 60
         ss = int(sim.real_time) % 60
-        text(f"Time            : {mm:02d}:{ss:02d}", C_TEXT)
-        text(f"Sim time        : {sim.sim_time:.1f}s", (60, 80, 70))
+        txt(f"Time : {mm:02d}:{ss:02d}  ({sim.sim_time:.0f}s sim)", rx, ry, C_TEXT)
+        ry += LH + 1
+        hsep(rx, RADAR_W - 6, ry); ry += 5
 
+        # ── Salvo control ─────────────────────
+        txt("── INCOMING SALVO ──", rx, ry, (80, 160, 100), self.font_md)
+        ry += LH + 2
+
+        lbl_s = self.font_sm.render("Max missiles :", True, C_TEXT)
+        s.blit(lbl_s, (rx, ry))
+        bx = rx + lbl_s.get_width() + 6
+
+        btn_w, btn_h = 22, 18
+
+        # [ - ]
+        minus_r = pygame.Rect(bx, ry, btn_w, btn_h)
+        pygame.draw.rect(s, (60, 20, 20), minus_r, border_radius=3)
+        pygame.draw.rect(s, (200, 60, 60), minus_r, 1, border_radius=3)
+        ms = self.font_md.render("-", True, (255, 100, 100))
+        s.blit(ms, (bx + btn_w//2 - ms.get_width()//2,
+                    ry + btn_h//2 - ms.get_height()//2))
+
+        # value
+        vx = bx + btn_w + 4
+        vs = self.font_md.render(str(sim.max_active_missiles), True, (255, 240, 80))
+        vbox = pygame.Rect(vx, ry, 26, btn_h)
+        pygame.draw.rect(s, (25, 38, 18), vbox, border_radius=3)
+        pygame.draw.rect(s, (70, 110, 50), vbox, 1, border_radius=3)
+        s.blit(vs, (vx + vbox.w//2 - vs.get_width()//2,
+                    ry + btn_h//2 - vs.get_height()//2))
+
+        # [ + ]
+        px2 = vx + vbox.w + 4
+        plus_r = pygame.Rect(px2, ry, btn_w, btn_h)
+        pygame.draw.rect(s, (15, 45, 25), plus_r, border_radius=3)
+        pygame.draw.rect(s, (60, 200, 100), plus_r, 1, border_radius=3)
+        ps = self.font_md.render("+", True, (80, 255, 140))
+        s.blit(ps, (px2 + btn_w//2 - ps.get_width()//2,
+                    ry + btn_h//2 - ps.get_height()//2))
+
+        ry += btn_h + 3
+        txt("1 – 10  click +/- to adjust", rx, ry, (60, 90, 70))
+        ry += LH
+
+        # Update screen-space rects for click detection
+        hud_ox, hud_oy = VIEW3D_W, RADAR_H
+        self.btn_salvo_minus = minus_r.move(hud_ox, hud_oy)
+        self.btn_salvo_plus  = plus_r.move(hud_ox, hud_oy)
+
+        hsep(rx, RADAR_W - 6, ry); ry += 5
+
+        # Paused banner
         if sim.paused:
-            text("  *** PAUSED ***", (255, 200, 50), self.font_lg)
-
-        sep()
-        text("── LEGEND ──", (60, 100, 80), self.font_md)
-        text("  ● red dot     = incoming missile",  C_MISSILE)
-        text("  ● blue dot    = our interceptor",   C_INTERCEPTOR)
-        text("  --- yellow    = predicted path",    C_PREDICTED)
-        text("  ⊕ orange      = predicted impact",  C_IMPACT)
-        text("  ◇ blue diamond= intercept point",   C_INTERCEPTOR)
+            txt("*** PAUSED  (SPACE to resume) ***", rx, ry, (255, 200, 50), self.font_md)
 
     # ══════════════════════════════════════════
     #  Input routing
