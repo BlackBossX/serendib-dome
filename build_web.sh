@@ -23,14 +23,42 @@ fi
 .venv/bin/pip install -q --upgrade pip
 .venv/bin/pip install -q pygame numpy pygbag
 
+# ── Patch pygbag to ignore .venv during archive scan ─────
+# pygbag 0.9.x ignores /venv but not /.venv; patch in-place.
+FILTER_PY="$(.venv/bin/python3 -c "import pygbag; import os; print(os.path.dirname(pygbag.__file__))")/filtering.py"
+if [ -f "$FILTER_PY" ] && ! grep -q '/\.venv' "$FILTER_PY"; then
+    echo "Patching pygbag filtering to ignore .venv ..."
+    sed -i 's|/venv|/venv\n/.venv\n/env\n/.env|' "$FILTER_PY"
+fi
+
+# ── Stage only game source (keeps venv out of archive) ───
+STAGE="$(mktemp -d)/serendib-dome"
+mkdir -p "$STAGE"
+echo "Staging source to $STAGE ..."
+cp    "$SCRIPT_DIR/main.py"  "$STAGE/"
+cp -r "$SCRIPT_DIR/game"     "$STAGE/"
+cp -r "$SCRIPT_DIR/renderer" "$STAGE/"
+
 # ── Build ─────────────────────────────────────────────────
 echo ""
 echo "▶  Building WebAssembly bundle..."
-.venv/bin/python3 -m pygbag --build --width 1440 --height 840 .
+.venv/bin/python3 -m pygbag --build --width 1440 --height 840 "$STAGE"
+
+# pygbag writes output to <stage>/build/web
+if [ -d "$STAGE/build/web" ]; then
+    rm -rf "$SCRIPT_DIR/web-build"
+    cp -r "$STAGE/build/web" "$SCRIPT_DIR/web-build"
+    echo "Copied build output to web-build/"
+else
+    echo "ERROR: Expected build output at $STAGE/build/web — check pygbag output above."
+    exit 1
+fi
+rm -rf "$(dirname "$STAGE")"
 
 echo ""
 echo "✔  Build complete → web-build/"
-echo "   Deploy the web-build/ directory to Vercel / any static host."
+echo "   Commit web-build/ and push – Vercel will serve it automatically."
+echo "   (web-build/ is tracked in git; no Vercel build step needed.)"
 
 # ── Optional local preview ─────────────────────────────────
 if $SERVE; then
@@ -39,3 +67,4 @@ if $SERVE; then
     echo "   Press Ctrl-C to stop."
     .venv/bin/python3 -m http.server 8000 --directory web-build
 fi
+

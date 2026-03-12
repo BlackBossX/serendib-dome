@@ -1,5 +1,4 @@
 {
-  "buildCommand": "pip install pygbag numpy pygame && python -m pygbag --build --width 1440 --height 840 .",
   "outputDirectory": "web-build",
   "framework": null,
   "headers": [
