@@ -1,0 +1,12 @@
+# Tell Vercel to ignore everything except the pre-built static bundle.
+# The WASM bundle in web-build/ is built locally and committed to git.
+# Vercel only serves web-build/ – it installs and builds nothing.
+
+requirements.txt
+run.sh
+build_web.sh
+main.py
+game/
+renderer/
+pygbag.ini
+.venv/

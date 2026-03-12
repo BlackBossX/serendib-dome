@@ -1,6 +1,8 @@
 {
   "outputDirectory": "web-build",
   "framework": null,
+  "installCommand": "",
+  "buildCommand": "",
   "headers": [
     {
       "source": "/(.*)",
