@@ -42,7 +42,27 @@ cp -r "$SCRIPT_DIR/renderer" "$STAGE/"
 # ── Build ─────────────────────────────────────────────────
 echo ""
 echo "▶  Building WebAssembly bundle..."
+
+# ── Workaround: some pygbag versions crash when parsing local pygbag.ini ──
+INI_BAK=""
+if [ -f "$SCRIPT_DIR/pygbag.ini" ]; then
+    INI_BAK="$SCRIPT_DIR/pygbag.ini.bak-build"
+    mv "$SCRIPT_DIR/pygbag.ini" "$INI_BAK"
+fi
+
+set +e
 .venv/bin/python3 -m pygbag --build --width 1440 --height 840 "$STAGE"
+BUILD_RC=$?
+set -e
+
+if [ -n "$INI_BAK" ] && [ -f "$INI_BAK" ]; then
+    mv "$INI_BAK" "$SCRIPT_DIR/pygbag.ini"
+fi
+
+if [ $BUILD_RC -ne 0 ]; then
+    echo "ERROR: pygbag build failed with exit code $BUILD_RC"
+    exit $BUILD_RC
+fi
 
 # pygbag writes output to <stage>/build/web
 if [ -d "$STAGE/build/web" ]; then
