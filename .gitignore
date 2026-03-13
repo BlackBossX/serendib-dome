@@ -40,6 +40,7 @@ Thumbs.db
 # pygbag / web build artefacts
 # web-build/ is committed so Vercel can serve it with no build step
 *.wasm
+logs/
 
 
 
